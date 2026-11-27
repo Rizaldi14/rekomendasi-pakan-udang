@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+import muat_berkas as mb
 import pipeline_pakan as pp
 
 BASE = Path(__file__).parent
@@ -35,7 +36,10 @@ def bangun_hasil(df: pd.DataFrame, _model) -> pd.DataFrame:
     for c, v in OPSIONAL.items():
         if c not in df.columns:
             df[c] = v
-    tgt = df[["Pond", "DOC", "Pakan", "Pakan_Standar", "Status_Panen", "Persentase_Panen", "Subset"]].copy()
+    df["Status_Panen"] = df["Status_Panen"].fillna(0)
+    df["Persentase_Panen"] = df["Persentase_Panen"].fillna(0.0)
+    tgt = df.dropna(subset=["Pakan"])[["Pond", "DOC", "Pakan", "Pakan_Standar", "Status_Panen", "Persentase_Panen", "Subset"]].copy()
+    df = df.dropna(subset=pp.FITUR)          # hari dasar harus punya semua fitur
     baris = []
     for h in pp.HORIZON:
         t = tgt.copy()
@@ -60,10 +64,27 @@ def bangun_hasil(df: pd.DataFrame, _model) -> pd.DataFrame:
     return out
 
 
-def _baca_unggahan(f):
-    df = pd.read_csv(f) if f.name.lower().endswith(".csv") else pd.read_excel(f)
-    kurang = [k for k in pp.KOLOM_BERKAS if k not in df.columns]
-    return df, kurang
+def _sig(d: pd.DataFrame) -> pd.Series:
+    """Tanda pengenal baris (DOC, MBW, Biomassa, Pakan) untuk mencocokkan dengan data latih/uji skripsi."""
+    f = d[["DOC", "MBW", "Biomassa", "Pakan"]].astype(float)
+    return (f["DOC"].round().astype(int).astype(str) + "|" + f["MBW"].round(2).astype(str) + "|"
+            + f["Biomassa"].round(1).astype(str) + "|" + f["Pakan"].round().astype(int).astype(str))
+
+
+def tandai_subset(df: pd.DataFrame):
+    """Berkas unggahan tanpa kolom Subset: tandai baris yang cocok dengan data latih ('Latih'), data uji skripsi ('Uji'),
+    atau belum pernah dilihat model ('Baru'). Bila berkas sudah punya Subset Latih/Uji, dipakai apa adanya."""
+    if "Subset" in df.columns and df["Subset"].isin(["Latih", "Uji"]).any():
+        return df, None
+    ref = pd.read_csv(BASE / "data_pengujian.csv")
+    latih, uji = set(_sig(ref[ref["Subset"] == "Latih"])), set(_sig(ref[ref["Subset"] == "Uji"]))
+    d = df.dropna(subset=["DOC", "MBW", "Biomassa", "Pakan"]).copy()
+    sig = _sig(d)
+    df = df.copy()
+    df["Subset"] = "Baru"
+    df.loc[d.index[sig.isin(uji).values], "Subset"] = "Uji"
+    df.loc[d.index[sig.isin(latih).values], "Subset"] = "Latih"
+    return df, df["Subset"].value_counts().to_dict()
 
 
 def _ringkas(d, kolom_pred):
@@ -86,17 +107,32 @@ def tampil(model):
         df = pd.read_csv(BASE / "data_pengujian.csv")
         bawaan = True
     else:
-        st.caption("Format kolom sama dengan mode unggah di halaman Prediksi: " + ", ".join(pp.KOLOM_BERKAS) +
-                   ". Kolom opsional: Pakan_Standar, Status_Panen, Persentase_Panen. Baris harus mencakup hari-hari setelah hari dasar "
-                   "(pakan aktual diambil dari kolom Pakan pada baris DOC+1 sampai DOC+7).")
-        f = st.file_uploader("Unggah berkas", type=["csv", "xlsx"], key="uji_file")
+        st.caption("Menerima Excel (.xlsx/.xlsm/.xls) dan CSV. Kolom yang dibutuhkan: " + mb.CONTOH_NAMA +
+                   ". Kolom opsional: Pakan_Standar, Status_Panen, Persentase_Panen, Subset. Berkas harus mencakup hari-hari "
+                   "setelah hari dasar (pakan aktual diambil dari kolom Pakan pada baris DOC+1 sampai DOC+7).")
+        f = st.file_uploader("Unggah berkas", type=["xlsx", "xlsm", "xls", "csv", "txt", "tsv"], key="uji_file")
         if f is None:
             st.info("Unggah berkas untuk memulai, atau pilih data bawaan.")
             return
-        df, kurang = _baca_unggahan(f)
-        if kurang:
-            st.error("Kolom tidak lengkap: " + ", ".join(kurang))
+        try:
+            lembar = mb.baca(f)
+        except mb.BerkasError as e:
+            st.error(str(e))
             return
+        valid = mb.lembar_valid(lembar)
+        if not valid:
+            st.error(mb.pesan_kolom_kurang(lembar))
+            return
+        nama = valid[0]
+        if len(valid) > 1:
+            nama = st.selectbox("Sheet yang dipakai", valid, index=valid.index(mb.lembar_default(valid)), key="uji_sheet")
+        df = lembar[nama][0]
+        df, hitung = tandai_subset(df)
+        if hitung:
+            st.info("Pencocokan otomatis dengan data skripsi: "
+                    + ", ".join(f"{v} baris {k.lower()}" for k, v in hitung.items())
+                    + ". Baris 'latih' sudah pernah dipakai melatih model (hasilnya cenderung terlalu bagus); "
+                      "'uji' dan 'baru' adalah data yang tidak dipakai melatih.")
         bawaan = False
 
     hasil = bangun_hasil(df, model)
@@ -114,7 +150,7 @@ def tampil(model):
         pilihan = sorted(hp["DOC dasar"].unique())
         # bawaan: default = hari dasar yang masih punya 7 hari aktual dan berada di data uji
         lengkap = [d for d in pilihan if (hp["DOC dasar"] == d).sum() == len(pp.HORIZON)
-                   and (hp[hp["DOC dasar"] == d]["Subset target"] == "Uji").all()] or pilihan
+                   and hp[hp["DOC dasar"] == d]["Subset target"].isin(["Uji", "Baru"]).all()] or pilihan
         doc = c2.selectbox("Hari dasar (DOC) yang diprediksi dari", pilihan,
                            index=pilihan.index(lengkap[-1]), key="uji_doc",
                            help="Prediksi dibuat dari data pada DOC ini, lalu dibandingkan dengan pakan aktual DOC+1 sampai DOC+7.")
@@ -162,16 +198,16 @@ def tampil(model):
         ada_subset = (hasil["Subset dasar"] != "-").any()
         c1, c2, c3 = st.columns(3)
         if ada_subset:
-            cakupan = c1.selectbox("Data yang diuji", ["Data uji saja (hari dasar & target di subset Uji)", "Semua data"], key="uji_cakupan")
+            cakupan = c1.selectbox("Data yang diuji", ["Data uji/baru saja (tidak dipakai melatih)", "Semua data"], key="uji_cakupan")
         else:
             cakupan = "Semua data"
             c1.caption("Berkas tidak punya kolom Subset, sehingga semua baris diuji (model mungkin pernah melihat sebagian data ini).")
-        pilih_pond = c2.selectbox("Kolam", ["Semua"] + [int(p) for p in sorted(hasil["Pond"].unique())], key="uji_pond_b")
+        pilih_pond = c2.selectbox("Kolam", ["Semua"] + list(sorted(hasil["Pond"].unique())), key="uji_pond_b")
         pilih_h = c3.selectbox("Horizon", ["Semua"] + [f"t+{h}" for h in pp.HORIZON], key="uji_h_b")
 
         u = hasil.copy()
         if cakupan.startswith("Data uji"):
-            u = u[(u["Subset dasar"] == "Uji") & (u["Subset target"] == "Uji")]
+            u = u[u["Subset dasar"].isin(["Uji", "Baru"]) & u["Subset target"].isin(["Uji", "Baru"])]
         if pilih_pond != "Semua":
             u = u[u["Pond"] == pilih_pond]
         if pilih_h != "Semua":
@@ -209,7 +245,7 @@ def tampil(model):
             gh = g2.selectbox("Horizon untuk grafik", [f"t+{h}" for h in pp.HORIZON], key="uji_gh")
             gu = hasil[(hasil["Pond"] == gp) & (hasil["Horizon"] == int(gh[2:]))]
             if cakupan.startswith("Data uji"):
-                gu = gu[(gu["Subset dasar"] == "Uji") & (gu["Subset target"] == "Uji")]
+                gu = gu[gu["Subset dasar"].isin(["Uji", "Baru"]) & gu["Subset target"].isin(["Uji", "Baru"])]
             gu = gu.sort_values("DOC target")
             fig, ax = plt.subplots(figsize=(10, 3.8))
             ax.plot(gu["DOC target"], gu["Pakan aktual (kg)"], "o-", color="#222", ms=4, lw=1.8, label="Pakan aktual")

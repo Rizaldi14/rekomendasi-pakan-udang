@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 import pipeline_pakan as pp
+import muat_berkas as mb
 
 BASE = Path(__file__).parent
 st.set_page_config(page_title="Rekomendasi Pakan Udang Vannamei", page_icon="🦐", layout="wide")
@@ -87,21 +88,45 @@ else:
             _t[_k] = ""          # kolom baru (mis. Pakan) dikosongkan, diisi pengguna
     templat = _t[pp.KOLOM_BERKAS].to_csv(index=False)
     sb.download_button("Unduh templat CSV", templat, "templat_data_harian.csv", "text/csv")
-    f = sb.file_uploader("Unggah berkas data harian", type=["csv", "xlsx"])
+    f = sb.file_uploader("Unggah berkas data harian (Excel atau CSV)",
+                         type=["xlsx", "xlsm", "xls", "csv", "txt", "tsv"],
+                         help="Menerima file Excel (.xlsx/.xlsm/.xls) dan CSV. Jika Excel berisi banyak sheet, "
+                              "sheet yang memuat kolom wajib dipilih otomatis. Nama kolom boleh sedikit berbeda "
+                              "(mis. 'pH Pagi', 'Kolam').")
     err_berkas = None
     if f is not None:
         try:
-            df = pd.read_csv(f) if f.name.lower().endswith(".csv") else pd.read_excel(f)
-            kurang = [k for k in pp.KOLOM_BERKAS if k not in df.columns]
-            if kurang:
-                err_berkas = "Kolom tidak lengkap: " + ", ".join(kurang) + "."
+            lembar = mb.baca(f)
+        except mb.BerkasError as e:
+            err_berkas = str(e)
+        else:
+            valid = mb.lembar_valid(lembar)
+            if not valid:
+                err_berkas = mb.pesan_kolom_kurang(lembar)
             else:
-                pond = sb.selectbox("Kolam pada berkas", sorted(df['Pond'].unique()))
-                baris = df[df['Pond'] == pond].sort_values('DOC').iloc[-1]
-                nilai = {k: float(baris[k]) for k in pp.FITUR}
-                sb.info(f"Data terakhir kolam {pond}: DOC {int(baris['DOC'])}")
-        except Exception:
-            err_berkas = "Berkas tidak dapat dibaca. Gunakan templat CSV/Excel yang disediakan."
+                nama = valid[0]
+                if len(valid) > 1:
+                    nama = sb.selectbox("Sheet yang dipakai", valid, index=valid.index(mb.lembar_default(valid)))
+                df = lembar[nama][0]
+                pond = sb.selectbox("Kolam pada berkas", sorted(df["Pond"].unique()))
+                lengkap = mb.baris_lengkap(df, pond)
+                if lengkap.empty:
+                    kosong = mb.kolom_bermasalah(df, pond)
+                    err_berkas = (f"Kolam {pond}: tidak ada baris dengan data lengkap. "
+                                  + (f"Pada baris terakhir kolom berikut kosong atau bukan angka: {', '.join(kosong)}."
+                                     if kosong else "Periksa isi kolom fitur."))
+                else:
+                    opsi_doc = [int(d) for d in lengkap["DOC"]]
+                    doc_pilih = sb.selectbox("Hari dasar (DOC)", opsi_doc, index=len(opsi_doc) - 1,
+                                             help="Prediksi dibuat dari data pada DOC ini. Bawaan: hari terakhir yang datanya lengkap.")
+                    baris = lengkap[lengkap["DOC"] == doc_pilih].iloc[-1]
+                    nilai = {k: float(baris[k]) for k in pp.FITUR}
+                    doc_akhir = df[df["Pond"] == pond]["DOC"].max()
+                    if doc_akhir > opsi_doc[-1] and doc_pilih == opsi_doc[-1]:
+                        sb.warning(f"Baris DOC {int(doc_akhir)} tidak lengkap, sehingga dipakai DOC {doc_pilih} "
+                                   "(hari terakhir yang datanya lengkap).")
+                    else:
+                        sb.info(f"Data kolam {pond}: DOC {doc_pilih}")
     else:
         err_berkas = "Unggah berkas data harian terlebih dahulu."
     if err_berkas:
