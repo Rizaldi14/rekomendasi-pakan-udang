@@ -1,8 +1,0 @@
-streamlit>=1.50
-xgboost==3.4.1
-scikit-learn
-pandas
-numpy
-matplotlib
-openpyxl
-xlrd
