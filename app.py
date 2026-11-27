@@ -182,8 +182,14 @@ if tombol and siap and not errors:
         ax.set_ylabel("Pakan harian (kg)"); ax.grid(alpha=.3); ax.legend(loc="lower right")
         st.pyplot(fig); plt.close(fig)
     with t2:
-        st.dataframe(tab_df, hide_index=True, width="stretch")
-        st.download_button("Unduh tabel (CSV)", tab_df.to_csv(index=False), "rekomendasi_pakan.csv", "text/csv")
+        tampil_df = tab_df[tab_df["Hari"] == hari]
+        st.markdown(f"**Rekomendasi untuk hari {hari} (DOC {doc0 + h_t})**, sesuai pilihan *Hari panen parsial yang direncanakan* di panel kiri.")
+        st.dataframe(tampil_df, hide_index=True, width="stretch")
+        d1, d2 = st.columns(2)
+        d1.download_button(f"Unduh tabel {hari} (CSV)", tampil_df.to_csv(index=False), f"rekomendasi_pakan_{hari.replace('+', '')}.csv",
+                           "text/csv", on_click="ignore")
+        d2.download_button("Unduh semua hari t+1 s/d t+7 (CSV)", tab_df.to_csv(index=False), "rekomendasi_pakan_7hari.csv",
+                           "text/csv", on_click="ignore")
         st.caption("Ini prediksi untuk hari-hari ke depan, sehingga pakan aktualnya belum ada. Setelah hari-hari tersebut berlalu, "
                    "bandingkan dengan pakan aktual di halaman **🧪 Pengujian: aktual vs prediksi** (menu Halaman di panel kiri).")
     with t3:
