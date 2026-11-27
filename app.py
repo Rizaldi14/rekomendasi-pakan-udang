@@ -20,7 +20,7 @@ def model():
 
 
 LUAS = {2: 2500, 4: 2500, 7: 2500, 8: 2500, 9: 2500}
-AWAL = dict(DOC=88, MBW=20.65, Size=49.1, Biomassa=3150.2, Luas=2500, pH_Pagi=8.0, pH_Siang=8.5, Suhu_Pagi=27.0, Suhu_Siang=28.0, Pakan=94.0)
+AWAL = dict(DOC=88, MBW=21, Size=49, Biomassa=3150, Luas=2500, pH_Pagi=8.0, pH_Siang=8.5, Suhu_Pagi=27, Suhu_Siang=28, Pakan=94)
 
 # ------------------------------------------------------------------ KETERANGAN FITUR
 KET = {
@@ -68,19 +68,19 @@ if mode == "Input manual":
     pond = sb.selectbox("Kolam (Pond)", [2, 4, 7, 8, 9])
     c1, c2 = sb.columns(2)
     nilai['DOC'] = c1.number_input(KET['DOC'][0], value=AWAL['DOC'], step=1, help=KET['DOC'][1])
-    nilai['MBW'] = c2.number_input(KET['MBW'][0], value=AWAL['MBW'], step=0.1, format="%.2f", help=KET['MBW'][1])
+    nilai['MBW'] = c2.number_input(KET['MBW'][0], value=AWAL['MBW'], step=1, help=KET['MBW'][1])
     c1, c2 = sb.columns(2)
-    nilai['Size'] = c1.number_input(KET['Size'][0], value=AWAL['Size'], step=0.1, help=KET['Size'][1])
-    nilai['Biomassa'] = c2.number_input(KET['Biomassa'][0], value=AWAL['Biomassa'], step=1.0, help=KET['Biomassa'][1])
+    nilai['Size'] = c1.number_input(KET['Size'][0], value=AWAL['Size'], step=1, help=KET['Size'][1])
+    nilai['Biomassa'] = c2.number_input(KET['Biomassa'][0], value=AWAL['Biomassa'], step=1, help=KET['Biomassa'][1])
     nilai['Luas'] = sb.number_input(KET['Luas'][0], value=LUAS[pond], step=100, help=KET['Luas'][1])
     c1, c2 = sb.columns(2)
-    nilai['pH_Pagi'] = c1.number_input(KET['pH_Pagi'][0], value=AWAL['pH_Pagi'], step=0.1, help=KET['pH_Pagi'][1])
-    nilai['pH_Siang'] = c2.number_input(KET['pH_Siang'][0], value=AWAL['pH_Siang'], step=0.1, help=KET['pH_Siang'][1])
+    nilai['pH_Pagi'] = c1.number_input(KET['pH_Pagi'][0], value=AWAL['pH_Pagi'], step=0.1, format="%.1f", help=KET['pH_Pagi'][1])
+    nilai['pH_Siang'] = c2.number_input(KET['pH_Siang'][0], value=AWAL['pH_Siang'], step=0.1, format="%.1f", help=KET['pH_Siang'][1])
     c1, c2 = sb.columns(2)
-    nilai['Suhu_Pagi'] = c1.number_input(KET['Suhu_Pagi'][0], value=AWAL['Suhu_Pagi'], step=0.5, help=KET['Suhu_Pagi'][1])
-    nilai['Suhu_Siang'] = c2.number_input(KET['Suhu_Siang'][0], value=AWAL['Suhu_Siang'], step=0.5, help=KET['Suhu_Siang'][1])
+    nilai['Suhu_Pagi'] = c1.number_input(KET['Suhu_Pagi'][0], value=AWAL['Suhu_Pagi'], step=1, help=KET['Suhu_Pagi'][1])
+    nilai['Suhu_Siang'] = c2.number_input(KET['Suhu_Siang'][0], value=AWAL['Suhu_Siang'], step=1, help=KET['Suhu_Siang'][1])
     if 'Pakan' in pp.FITUR:
-        nilai['Pakan'] = sb.number_input(KET['Pakan'][0], value=AWAL['Pakan'], step=1.0, help=KET['Pakan'][1])
+        nilai['Pakan'] = sb.number_input(KET['Pakan'][0], value=AWAL['Pakan'], step=1, help=KET['Pakan'][1])
 else:
     _t = pd.read_csv(BASE / "contoh_data_harian.csv").head(3)
     for _k in pp.KOLOM_BERKAS:
@@ -135,7 +135,7 @@ else:
 sb.divider()
 sb.subheader("Rencana Panen Parsial")
 hari = sb.selectbox(KET_PANEN[0], [f"t+{h}" for h in pp.HORIZON], index=2, help=KET_PANEN[1])
-panen = sb.number_input("Persentase panen parsial (%)", value=17.38, step=0.5, help=KET_PERSEN)
+panen = sb.number_input("Persentase panen parsial (%)", value=17, step=1, help=KET_PERSEN)
 tombol = sb.button("Prediksi Pakan", type="primary", width="stretch")
 
 # ------------------------------------------------------------------ UTAMA
